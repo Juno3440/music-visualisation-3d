@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Particle System with Piano</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        /* Basic styling */
+        body { margin: 0; overflow: hidden; font-family: 'Inter', sans-serif; background-color: #111827; color: #f3f4f6; display: flex; flex-direction: column; height: 100vh; }
+        #canvas-container { flex-grow: 1; position: relative; min-height: 200px; }
+        canvas { display: block; width: 100%; height: 100%; }
+        #info { position: absolute; top: 10px; left: 10px; padding: 8px 12px; background-color: rgba(0, 0, 0, 0.6); border-radius: 8px; font-size: 0.9em; z-index: 100; }
+        #start-button { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 15px 30px; font-size: 1.2em; background-color: #3b82f6; color: white; border: none; border-radius: 8px; cursor: pointer; z-index: 200; transition: background-color 0.3s ease; }
+        #start-button:hover { background-color: #2563eb; }
+
+        /* Piano & Controls container */
+        #piano-container { width: 100%; height: 170px; background-color: #374151; display: flex; justify-content: center; align-items: center; padding: 10px 20px; box-shadow: 0 -4px 6px rgba(0,0,0,0.1); flex-shrink: 0; overflow-x: auto; gap: 30px; box-sizing: border-box; }
+        .piano { display: flex; position: relative; height: 100%; max-height: 150px; flex-shrink: 0; }
+        /* Key styling */
+        .key { border: 1px solid #4b5563; border-radius: 0 0 5px 5px; cursor: pointer; transition: background-color 0.1s ease; box-shadow: inset 0 -2px 3px rgba(0,0,0,0.2); display: flex; justify-content: center; align-items: flex-end; padding-bottom: 5px; font-size: 0.7em; color: #6b7280; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; box-sizing: border-box; }
+        .white { background-color: #ffffff; width: 40px; height: 100%; z-index: 1; position: relative; }
+        .white.active { background-color: #d1d5db; }
+        .black { background: linear-gradient(to bottom, #374151, #1f2937); color: #d1d5db; width: 25px; height: 60%; position: absolute; top: 0; z-index: 2; border-radius: 0 0 3px 3px; box-shadow: inset 0 -2px 2px rgba(0,0,0,0.4), 0 2px 3px rgba(0,0,0,0.3); }
+        .black.active { background: linear-gradient(to bottom, #1f2937, #111827); }
+        /* Black Key Positioning */
+        .key[data-note="C#4"] { left: calc(1 * 40px - 25px / 2); } .key[data-note="D#4"] { left: calc(2 * 40px - 25px / 2); } .key[data-note="F#4"] { left: calc(4 * 40px - 25px / 2); } .key[data-note="G#4"] { left: calc(5 * 40px - 25px / 2); } .key[data-note="A#4"] { left: calc(6 * 40px - 25px / 2); } .key[data-note="C#5"] { left: calc((7 + 1) * 40px - 25px / 2); } .key[data-note="D#5"] { left: calc((7 + 2) * 40px - 25px / 2); } .key[data-note="F#5"] { left: calc((7 + 4) * 40px - 25px / 2); } .key[data-note="G#5"] { left: calc((7 + 5) * 40px - 25px / 2); } .key[data-note="A#5"] { left: calc((7 + 6) * 40px - 25px / 2); }
+
+        /* Controls Area Styling */
+        #controls-area { display: flex; flex-direction: column; gap: 10px; /* Reduced gap slightly */ justify-content: center; align-items: flex-start; /* Align items to start */ height: 100%; max-height: 150px; min-width: 180px; /* Increased width for toggle */ }
+        .control-group { display: flex; align-items: center; gap: 10px; width: 100%; justify-content: space-between; }
+        .control-group label { font-size: 0.8em; color: #d1d5db; white-space: nowrap; flex-shrink: 0; /* Prevent label shrinking */ }
+        .control-group.disabled { opacity: 0.5; pointer-events: none; /* Disable interaction */ }
+        .control-group.disabled input[type="range"] { cursor: not-allowed; }
+
+        #zoom-controls { display: flex; gap: 10px; }
+        .zoom-button { background-color: #4b5563; color: #e5e7eb; border: none; border-radius: 6px; width: 35px; height: 35px; font-size: 1.3em; font-weight: bold; cursor: pointer; display: flex; justify-content: center; align-items: center; transition: background-color 0.2s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        .zoom-button:hover { background-color: #6b7280; } .zoom-button:active { background-color: #525d6d; box-shadow: inset 0 1px 2px rgba(0,0,0,0.3); }
+
+        /* Slider Styling */
+        input[type="range"] { -webkit-appearance: none; appearance: none; width: 100px; height: 8px; background: #4b5563; border-radius: 4px; cursor: pointer; outline: none; transition: opacity 0.2s ease; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: #9ca3af; border-radius: 50%; cursor: pointer; }
+        input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; background: #9ca3af; border-radius: 50%; cursor: pointer; border: none; }
+        input[type="range"]:hover { opacity: 0.9; }
+
+        /* Toggle Switch Styling */
+        .toggle-switch { position: relative; display: inline-block; width: 44px; /* Adjusted size */ height: 24px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #6b7280; /* Gray-500 */ transition: .4s; border-radius: 24px; }
+        .toggle-slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .toggle-slider { background-color: #3b82f6; /* Blue-500 */ }
+        input:focus + .toggle-slider { box-shadow: 0 0 1px #3b82f6; }
+        input:checked + .toggle-slider:before { transform: translateX(20px); /* Adjusted translation */ }
+
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <button id="start-button">Click to Start</button>
+    <div id="canvas-container">
+        <div id="info">Move mouse to interact. Play the piano! Use controls below.</div>
+    </div>
+    <div id="piano-container">
+        <div class="piano">
+            <div class="key white" data-note="C4">C4</div><div class="key white" data-note="D4">D4</div><div class="key white" data-note="E4">E4</div><div class="key white" data-note="F4">F4</div><div class="key white" data-note="G4">G4</div><div class="key white" data-note="A4">A4</div><div class="key white" data-note="B4">B4</div><div class="key white" data-note="C5">C5</div><div class="key white" data-note="D5">D5</div><div class="key white" data-note="E5">E5</div><div class="key white" data-note="F5">F5</div><div class="key white" data-note="G5">G5</div><div class="key white" data-note="A5">A5</div><div class="key white" data-note="B5">B5</div>
+            <div class="key black" data-note="C#4">C#</div><div class="key black" data-note="D#4">D#</div><div class="key black" data-note="F#4">F#</div><div class="key black" data-note="G#4">G#</div><div class="key black" data-note="A#4">A#</div><div class="key black" data-note="C#5">C#</div><div class="key black" data-note="D#5">D#</div><div class="key black" data-note="F#5">F#</div><div class="key black" data-note="G#5">G#</div><div class="key black" data-note="A#5">A#</div>
+        </div>
+        <div id="controls-area">
+             <div class="control-group">
+                 <label for="spin-mode-toggle">Spin Mode</label>
+                 <label class="toggle-switch">
+                     <input type="checkbox" id="spin-mode-toggle">
+                     <span class="toggle-slider"></span>
+                 </label>
+             </div>
+             <div class="control-group disabled" id="spin-boost-group">
+                 <label for="spin-boost-slider">Spin Boost</label>
+                 <input type="range" id="spin-boost-slider" min="0" max="100" value="50" disabled> </div>
+             <div class="control-group">
+                 <label for="explosion-strength-slider">Burst</label>
+                 <input type="range" id="explosion-strength-slider" min="0" max="100" value="50">
+             </div>
+             <div class="control-group">
+                 <label for="zoom-controls">Zoom</label>
+                 <div id="zoom-controls">
+                    <button id="zoom-in-button" class="zoom-button">-</button>
+                    <button id="zoom-out-button" class="zoom-button">+</button>
+                 </div>
+             </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Global Variables ---
+        let scene, camera, renderer;
+        let particles, geometry, material;
+        let mouseX = 0, mouseY = 0;
+        let windowHalfX = window.innerWidth / 2;
+        let windowHalfY = (window.innerHeight - 170) / 2;
+        let synth;
+        // Reaction variables
+        let reactionIntensity = 0;
+        const reactionDecay = 0.95;
+        const reactionBoost = 1.0;
+        let maxDisplacement = 250;
+        // Spin variables
+        const baseSpinSpeed = 0.0005;
+        let currentSpinSpeed = baseSpinSpeed;
+        let targetSpinSpeed = baseSpinSpeed;
+        let spinBoostFactor = 0.025; // Initial value (maps to slider 50), controlled by slider
+        const spinAcceleration = 0.05;
+        const spinDecayFactor = 0.98;
+        const maxTargetSpeed = 0.1; // Increased max target speed significantly
+        // Mode variables
+        let isSpinModeActive = false; // Start with Spin Mode OFF
+        // Other variables
+        let isAudioStarted = false;
+        let isReacting = false;
+        let particleCount;
+        const radius = 700;
+        const zoomSpeed = 75;
+        const minZoom = 200;
+        const maxZoom = 2000;
+
+        // --- DOM Element References ---
+        let spinBoostSlider, spinBoostGroup, spinModeToggle; // Cache elements
+
+        // --- Initialization ---
+        function init() {
+            // Cache DOM elements used frequently
+            spinModeToggle = document.getElementById('spin-mode-toggle');
+            spinBoostSlider = document.getElementById('spin-boost-slider');
+            spinBoostGroup = document.getElementById('spin-boost-group');
+
+            // Synth, Scene, Camera, Particles, Renderer setup...
+            synth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' }, envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 0.8 } }).toDestination();
+            const canvasContainer = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, canvasContainer.clientWidth / canvasContainer.clientHeight, 1, 3000);
+            camera.position.z = 1000;
+            particleCount = 15000;
+            const positions = new Float32Array(particleCount * 3); const colors = new Float32Array(particleCount * 3); const color = new THREE.Color();
+            for (let i = 0; i < particleCount; i++) { /* ... particle creation ... */
+                const theta = Math.random() * Math.PI * 2; const phi = Math.acos((Math.random() * 2) - 1); const r = Math.cbrt(Math.random()) * radius;
+                const x = r * Math.sin(phi) * Math.cos(theta); const y = r * Math.sin(phi) * Math.sin(theta); const z = r * Math.cos(phi);
+                positions[i * 3] = x; positions[i * 3 + 1] = y; positions[i * 3 + 2] = z;
+                color.setHSL((x / radius + 1) / 2, 0.9, 0.6); colors[i * 3] = color.r; colors[i * 3 + 1] = color.g; colors[i * 3 + 2] = color.b;
+            }
+            geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3)); geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.userData.initialPositions = positions.slice();
+            material = new THREE.PointsMaterial({ size: 4, vertexColors: true, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, sizeAttenuation: true });
+            particles = new THREE.Points(geometry, material); scene.add(particles);
+            renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(window.devicePixelRatio); renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight); canvasContainer.appendChild(renderer.domElement);
+
+            // Setup Piano Key Listeners
+            const keys = document.querySelectorAll('.key');
+            keys.forEach(key => { const note = key.dataset.note; /* ... add listeners ... */
+                 key.addEventListener('mousedown', () => playNote(note, key)); key.addEventListener('mouseup', () => stopNote(note, key)); key.addEventListener('mouseleave', () => stopNote(note, key));
+                 key.addEventListener('touchstart', (e) => { e.preventDefault(); playNote(note, key); }, { passive: false }); key.addEventListener('touchend', (e) => { e.preventDefault(); stopNote(note, key); }); key.addEventListener('touchcancel', (e) => { e.preventDefault(); stopNote(note, key); });
+            });
+
+            // Setup Control Listeners
+            document.getElementById('zoom-in-button').addEventListener('click', zoomIn);
+            document.getElementById('zoom-out-button').addEventListener('click', zoomOut);
+            spinBoostSlider.addEventListener('input', updateSpinBoost);
+            document.getElementById('explosion-strength-slider').addEventListener('input', updateExplosionStrength);
+            spinModeToggle.addEventListener('change', handleSpinModeToggle); // Listener for the toggle
+
+            // General Event Listeners
+            document.addEventListener('mousemove', onDocumentMouseMove, false); window.addEventListener('resize', onWindowResize, false);
+
+            // Initial setup
+            handleSpinModeToggle(); // Set initial state based on default toggle value
+            updateSpinBoost({ target: spinBoostSlider });
+            updateExplosionStrength({ target: document.getElementById('explosion-strength-slider') });
+            onWindowResize();
+        }
+
+        // --- Start Audio Context ---
+        function startAudio() { /* ... Tone.start logic ... */
+             if (!isAudioStarted) {
+                 Tone.start().then(() => { console.log("Audio Context Started"); isAudioStarted = true; document.getElementById('start-button').style.display = 'none';
+                    try { init(); animate(); } catch (error) { console.error("Init failed:", error); displayError("Error during initialization."); }
+                }).catch(error => { console.error("Tone.start failed:", error); displayError("Could not start audio."); });
+            }
+        }
+
+        // --- Piano Interaction ---
+        function playNote(note, keyElement) {
+            if (!isAudioStarted || !synth) return;
+            synth.triggerAttack(note, Tone.now());
+            if (keyElement) keyElement.classList.add('active');
+            reactionIntensity = Math.min(reactionIntensity + reactionBoost, 2.5);
+            if (!isReacting) isReacting = true;
+
+            // Boost target spin speed ONLY if spin mode is active
+            if (isSpinModeActive) {
+                targetSpinSpeed = Math.min(maxTargetSpeed, targetSpinSpeed + spinBoostFactor);
+            }
+        }
+        function stopNote(note, keyElement) { // (same)
+            if (!isAudioStarted || !synth) return; if (synth && typeof synth.triggerRelease === 'function') { synth.triggerRelease(note, Tone.now() + 0.05); }
+            if (keyElement) keyElement.classList.remove('active');
+        }
+
+        // --- Control Handlers ---
+        function zoomIn() { if (!camera) return; camera.position.z = Math.max(minZoom, camera.position.z - zoomSpeed); }
+        function zoomOut() { if (!camera) return; camera.position.z = Math.min(maxZoom, camera.position.z + zoomSpeed); }
+
+        function updateSpinBoost(event) {
+            const sliderValue = parseFloat(event.target.value); // 0-100
+            // Map slider 0-100 to boost factor 0.0 to 0.05 (much higher max boost per note)
+            spinBoostFactor = (sliderValue / 100.0) * 0.05;
+            // console.log("Spin Boost Factor:", spinBoostFactor);
+        }
+        function updateExplosionStrength(event) { // (same)
+            const sliderValue = parseFloat(event.target.value);
+            maxDisplacement = 50 + (sliderValue / 100.0) * 450;
+            // console.log("Max Displacement:", maxDisplacement);
+        }
+
+        function handleSpinModeToggle() {
+            isSpinModeActive = spinModeToggle.checked;
+            if (isSpinModeActive) {
+                spinBoostGroup.classList.remove('disabled'); // Enable group visually
+                spinBoostSlider.disabled = false; // Enable slider interaction
+                 // Optional: Reset target/current speed when activating? Or let it continue? Let's let it continue.
+            } else {
+                spinBoostGroup.classList.add('disabled'); // Disable group visually
+                spinBoostSlider.disabled = true; // Disable slider interaction
+                // Optional: Force speed decay when turning off?
+                // targetSpinSpeed = baseSpinSpeed; // Force target back to base immediately
+            }
+            // console.log("Spin Mode Active:", isSpinModeActive);
+        }
+
+        // --- Event Handlers ---
+        function onWindowResize() { /* ... update camera aspect, renderer size ... */
+            const canvasContainer = document.getElementById('canvas-container'); if (!canvasContainer) return; const newWidth = canvasContainer.clientWidth; const newHeight = canvasContainer.clientHeight;
+            windowHalfX = newWidth / 2; windowHalfY = newHeight / 2;
+            if (camera) { camera.aspect = newWidth / newHeight; camera.updateProjectionMatrix(); } if (renderer) { renderer.setSize(newWidth, newHeight); }
+        }
+        function onDocumentMouseMove(event) {
+             // Only update mouseX/Y if spin mode is OFF
+             if (!isSpinModeActive) {
+                 const canvasContainer = document.getElementById('canvas-container'); if (!canvasContainer) return; const rect = canvasContainer.getBoundingClientRect();
+                mouseX = ((event.clientX - rect.left) / canvasContainer.clientWidth) * 2 - 1;
+                mouseY = -((event.clientY - rect.top) / canvasContainer.clientHeight) * 2 + 1;
+             } else {
+                 // Optional: Reset mouseX/Y so camera doesn't jump when mode is reactivated?
+                 // mouseX = 0;
+                 // mouseY = 0;
+             }
+        }
+
+        // --- Animation Loop ---
+        function animate() { requestAnimationFrame(animate); render(); }
+
+        // --- Rendering Logic ---
+        function render() {
+            if (!scene || !camera || !renderer || !particles) return;
+
+            // Update Spin Speed
+            targetSpinSpeed = Math.max(baseSpinSpeed, targetSpinSpeed * spinDecayFactor);
+            currentSpinSpeed += (targetSpinSpeed - currentSpinSpeed) * spinAcceleration;
+
+            // Apply Rotation
+            particles.rotation.y += currentSpinSpeed;
+            particles.rotation.x += currentSpinSpeed * 0.3;
+
+            // --- Conditional Camera Mouse Interaction ---
+            if (!isSpinModeActive) {
+                // Only apply mouse position influence if spin mode is OFF
+                camera.position.x += (mouseX * 300 - camera.position.x) * 0.05;
+                camera.position.y += (mouseY * 300 - camera.position.y) * 0.05;
+            }
+            // Always look at the center
+            camera.lookAt(scene.position);
+
+            // Apply Chaotic Soundwave Visual Reaction (same logic)
+            const currentPositions = geometry.attributes.position.array;
+            const initialPositions = geometry.userData.initialPositions;
+            if (reactionIntensity > 0.01) {
+                isReacting = true;
+                for (let i = 0; i < particleCount; i++) { /* ... calculate chaotic displacement ... */
+                    const i3 = i * 3; const ix = initialPositions[i3]; const iy = initialPositions[i3 + 1]; const iz = initialPositions[i3 + 2];
+                    const length = Math.sqrt(ix*ix + iy*iy + iz*iz);
+                    if (length > 0) {
+                        const nx = ix / length; const ny = iy / length; const nz = iz / length;
+                        const randomFactor = Math.random() * 1.5 + 0.5;
+                        const particleDisplacement = reactionIntensity * maxDisplacement * randomFactor;
+                        currentPositions[i3] = ix + nx * particleDisplacement; currentPositions[i3 + 1] = iy + ny * particleDisplacement; currentPositions[i3 + 2] = iz + nz * particleDisplacement;
+                    } else { currentPositions[i3] = ix; currentPositions[i3 + 1] = iy; currentPositions[i3 + 2] = iz; }
+                }
+                geometry.attributes.position.needsUpdate = true;
+                reactionIntensity *= reactionDecay;
+            } else if (isReacting) { /* ... reset positions ... */
+                 currentPositions.set(initialPositions); geometry.attributes.position.needsUpdate = true; reactionIntensity = 0; isReacting = false;
+            }
+
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+
+         // --- Utility --- (same)
+         function displayError(message) { /* ... display error message ... */
+             let errorDiv = document.getElementById('error-message'); if (!errorDiv) { errorDiv = document.createElement('div'); errorDiv.id = 'error-message'; /* ... styles ... */ errorDiv.style.position = 'absolute'; errorDiv.style.top = '30%'; errorDiv.style.left = '50%'; errorDiv.style.transform = 'translate(-50%, -50%)'; errorDiv.style.padding = '20px'; errorDiv.style.backgroundColor = 'rgba(220, 38, 38, 0.8)'; errorDiv.style.color = 'white'; errorDiv.style.borderRadius = '8px'; errorDiv.style.zIndex = '150'; document.body.appendChild(errorDiv); }
+             errorDiv.textContent = message; const startButton = document.getElementById('start-button'); if (startButton) startButton.style.display = 'none';
+         }
+
+        // --- Start --- (same)
+        document.getElementById('start-button').addEventListener('click', startAudio);
+        window.addEventListener('error', function(event) { /* ... basic error logging ... */
+             console.error("Unhandled error:", event.message, event.filename, event.lineno); if (!event.message.toLowerCase().includes('tone')) { displayError('A critical error occurred.'); }
+        });
+
+    </script>
+</body>
+</html>
